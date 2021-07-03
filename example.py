@@ -10,13 +10,17 @@ x = 1
 
 arm.axes["Y"].requested_state = 2
 
-while True:
-    # arm.move((0.1,-0.1,0.1))
-    pos = (random.random(),random.random(),random.random())
-    print("Times run: " + str(x) + ", pos:" + str(pos))
-    arm.move_blocking(pos)
+try:
 
-    x = x + 1
+    while True:
+        # arm.move((0.1,-0.1,0.1))
+        pos = (random.random(),random.random(),random.random())
+        print("Times run: " + str(x) + ", pos:" + str(pos))
+        arm.move_traj(pos)
+
+        x = x + 1
+except:
+    arm.move_traj((0.5,0.5,0.5))
     
 # at 0.5s delay it ran: 24, 32
 # at 1s delay it ran: 288

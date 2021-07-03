@@ -3,7 +3,7 @@ from typing import Dict, Tuple
 import odrive
 from odrive.enums import *
 from odrive.utils import dump_errors
-from typing import Union, Any
+from typing import *
 
 import sys
 import time
@@ -17,11 +17,26 @@ class Odrive_Arm:
     odrv_YZ = None
     axes: Union[Any, Dict[str, Any]] = None
 
-    valid_movement_range = {
-        "X": (-0.3, 0.1),
+    true_movement_range: Dict[str,Tuple[float,float]] = {
+        "X": (-0.25, 0.05),
         "Y": (-0.3, 0),
         "Z": (-0.20, 0)
     }
+
+    def _get_valid_movement_range(self, goal_pos: "Tuple[float, float, float]") -> "Dict[str,Tuple(float,float)]":
+        z_axis_factor = goal_pos[2]/2
+        return {
+            "X": self.true_movement_range["X"],
+            "Y": (self.true_movement_range["Y"][0],self.true_movement_range["Y"][1]*z_axis_factor),
+            "Z": self.true_movement_range["Z"],
+
+        }
+    def _get_axis_positions(self) -> Dict[str,float]:
+        return {
+            "X": self.axes["X"].encoder.pos_estimate,
+            "Y": self.axes["Y"].encoder.pos_estimate,
+            "Z": self.axes["Z"].encoder.pos_estimate
+        }
 
     # Generates and Odrive Arm Object, that automatically connects to the odrive
     def __init__(self):
@@ -29,7 +44,7 @@ class Odrive_Arm:
         Setup the odrive, don't worry, black magic fuckery
         """
         self._connect_to_odrive()
-        self._reset_odrive()
+        self._reset_odrives()
 
     # Configures all axes for fancy trajectory movement
     def _configure_for_trajectory(self):
@@ -40,7 +55,26 @@ class Odrive_Arm:
         for axis in self.axes.values():
             axis.controller.config.input_mode = INPUT_MODE_TRAP_TRAJ
 
-    def _reset_odrive(self):
+    def _reset_one_odrive(self,axis_id):
+        self.check_errors()
+        # If there is an error, it configures it back to idle
+        print("setting state")
+        self._set_state(axis_id, AXIS_STATE_CLOSED_LOOP_CONTROL)
+        print("setting state2")
+
+        self.axes[axis_id].controller.config.control_mode = CONTROL_MODE_POSITION_CONTROL
+        print("setting state3")
+
+        time.sleep(0.1)
+        # Back to Zero Zero we go
+        # self.move((0.5, 0.5, 0.5))
+
+        self._configure_for_trajectory()
+        print("setting state4")
+
+
+
+    def _reset_odrives(self):
         self.check_errors()
         # If there is an error, it configures it back to idle
         for axis_id in self.axes:
@@ -102,18 +136,30 @@ class Odrive_Arm:
         Check to see if the odrive encountered any errors, will just eject if errors are found.
         """
         self._check_connected()
-        for axis in self.axes.values():
-            if axis.error != 0:
+        for axis_id in self.axes:
+            if self.axes[axis_id].error == 32:
+                print("Ignoring Deadline Missed")
+                print("Checking YZ")
+                dump_errors(self.odrv_YZ, True)
+                print("Checking X")
+                dump_errors(self.odrv_X, True)
+
+                self._reset_one_odrive(axis_id)
+
+                print("reset",axis_id)
+
+
+            elif self.axes[axis_id].error != 0:
                 print("ERROR:")
-                print(axis.error)
+                print(self.axes[axis_id].error)
                 print("Checking YZ")
                 dump_errors(self.odrv_YZ, True)
                 print("Checking X")
 
                 dump_errors(self.odrv_X, True)
 
-                print("Quiting due to error...")
-                sys.exit()
+                print("Attempting Reset")
+                self._reset_odrives()
 
     def move_axis(self, axis_id: str, pos: float):
         """
@@ -121,15 +167,16 @@ class Odrive_Arm:
         """
         self.check_errors()
         assert axis_id in self.axes
+        current_pos = self._get_axis_positions()
         scaled_pos = self._convert_to_odrive_units(axis_id,pos)
         self.axes[axis_id].controller.input_pos = scaled_pos
 
     def move(self, pos: Tuple[float, float, float]):
-        scaled_pos: Tuple[float, float, float] = tuple(map(
+        scaled_pos: "Tuple[float, float, float]" = tuple(map(
             lambda axis_id_and_pos:
                 self._convert_to_odrive_units(
-                    list(self.valid_movement_range.keys())[axis_id_and_pos[0]],
-                    axis_id_and_pos[1]
+                    list(self.true_movement_range.keys())[axis_id_and_pos[0]],
+                    pos
                 ),
             enumerate(list(pos))
         ))
@@ -139,12 +186,12 @@ class Odrive_Arm:
         self.axes["Y"].controller.input_pos = scaled_pos[1]
         self.axes["Z"].controller.input_pos = scaled_pos[2]
     
-    def move_blocking(self, pos: Tuple[float, float, float]):
-        scaled_pos: Tuple[float, float, float] = tuple(map(
+    def move_traj(self, pos: Tuple[float, float, float]):
+        scaled_pos: "Tuple[float, float, float]" = tuple(map(
             lambda axis_id_and_pos:
                 self._convert_to_odrive_units(
-                    list(self.valid_movement_range.keys())[axis_id_and_pos[0]],
-                    axis_id_and_pos[1]
+                    list(self.true_movement_range.keys())[axis_id_and_pos[0]],
+                    pos
                 ),
             enumerate(list(pos))
         ))
@@ -154,8 +201,12 @@ class Odrive_Arm:
         self.axes["Y"].controller.input_pos = scaled_pos[1]
         self.axes["Z"].controller.input_pos = scaled_pos[2]
 
-        while not self._check_trajectory_done():
+        move_time = 0
+        while not (self._check_trajectory_done() or move_time > 1.5):
             time.sleep(0.05)
+            move_time += 0.05
+        if move_time > 1.5:
+            print("Timeout on move")
 
 
     def _set_state(self, axis_id: str, state):
@@ -170,8 +221,11 @@ class Odrive_Arm:
         axis.requested_state = state
         retry_delay = 0.1
         transition_time = 0
+        print("transitioning")
         # print("waiting for transition")
         while not (axis.current_state == state or (axis.current_state != previous_state and previous_state == AXIS_STATE_IDLE) or transition_time > 1):
+            print("transitioning,",axis.current_state)
+
             time.sleep(retry_delay)
             transition_time += retry_delay
         # print("waiting for idle")
@@ -180,11 +234,15 @@ class Odrive_Arm:
             time.sleep(retry_delay)
         check_errors(axis)
 
-    def _convert_to_odrive_units(self, axis_id: str, input_pos: float) -> float:
-        assert input_pos >= 0 and input_pos <= 1
+    def _convert_to_odrive_units(self, axis_id: str, all_input_pos: Tuple[float, float, float]) -> float:
+        for pos in all_input_pos:
+            assert pos >= 0 and pos <= 1
         assert axis_id in self.axes
+        movement_range = self._get_valid_movement_range(all_input_pos)
 
-        (axis_min, axis_max) = self.valid_movement_range[axis_id]
+        input_pos = all_input_pos[self._get_order_of_axes()[axis_id]]
+
+        (axis_min, axis_max) = movement_range[axis_id]
         axis_range = axis_max-axis_min
         input_scaled = input_pos*axis_range + axis_min
 
@@ -196,3 +254,10 @@ class Odrive_Arm:
             complete = complete and self.axes[axis_id].controller.trajectory_done
             # print(axis_id,self.axes[axis_id].controller.trajectory_done)
         return complete
+    
+    def _get_order_of_axes(axis_id: str) -> int:
+        return {
+            "X": 0,
+            "Y": 1,
+            "Z": 2,
+        }

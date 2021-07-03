@@ -83,14 +83,14 @@ def main():
         axis.encoder.config.calib_range = 0.05
         axis.motor.config.calibration_current = 10.0
         axis.motor.config.resistance_calib_max_voltage = 5.0
-        axis.controller.config.vel_limit = 5
+        axis.controller.config.vel_limit = 15
         axis.controller.config.vel_limit_tolerance = 1.2000000476837158
         axis.motor.config.pole_pairs = 20
         axis.motor.config.current_lim = 20.0
 
-        axis.trap_traj.config.vel_limit = 5
-        axis.trap_traj.config.accel_limit = 2
-        axis.trap_traj.config.decel_limit = 2
+        axis.trap_traj.config.vel_limit = 15
+        axis.trap_traj.config.accel_limit = 10
+        axis.trap_traj.config.decel_limit = 10
         # axis.<axis>.controller.config.inertia 
 
         
