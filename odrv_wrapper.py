@@ -1,4 +1,3 @@
-from configs.configureXYZ import check_errors
 from typing import Dict, Tuple
 import odrive
 from odrive.enums import *
@@ -19,11 +18,11 @@ class Odrive_Arm:
 
     true_movement_range: Dict[str,Tuple[float,float]] = {
         "X": (-0.25, 0.05),
-        "Y": (-0.3, 0),
+        "Y": (-0.3, -0.05),
         "Z": (-0.20, 0)
     }
 
-    def _get_valid_movement_range(self, goal_pos: "Tuple[float, float, float]") -> "Dict[str,Tuple(float,float)]":
+    def _get_valid_movement_range(self, goal_pos: "Tuple[float, float, float]") -> Dict[str,Tuple[float,float]]:
         z_axis_factor = goal_pos[2]/2
         return {
             "X": self.true_movement_range["X"],
@@ -167,12 +166,13 @@ class Odrive_Arm:
         """
         self.check_errors()
         assert axis_id in self.axes
-        current_pos = self._get_axis_positions()
-        scaled_pos = self._convert_to_odrive_units(axis_id,pos)
+        goto_pos = self._get_axis_positions()
+        goto_pos[axis_id] = pos
+        scaled_pos = self._convert_to_odrive_units(axis_id,(goto_pos["X"],goto_pos["Y"],goto_pos["Z"]))
         self.axes[axis_id].controller.input_pos = scaled_pos
 
     def move(self, pos: Tuple[float, float, float]):
-        scaled_pos: "Tuple[float, float, float]" = tuple(map(
+        scaled_pos: Tuple[float, float, float] = tuple(map(
             lambda axis_id_and_pos:
                 self._convert_to_odrive_units(
                     list(self.true_movement_range.keys())[axis_id_and_pos[0]],
@@ -232,7 +232,7 @@ class Odrive_Arm:
 
         while not (axis.current_state == state or transition_time > 5):
             time.sleep(retry_delay)
-        check_errors(axis)
+        self.check_errors()
 
     def _convert_to_odrive_units(self, axis_id: str, all_input_pos: Tuple[float, float, float]) -> float:
         for pos in all_input_pos:
@@ -255,7 +255,7 @@ class Odrive_Arm:
             # print(axis_id,self.axes[axis_id].controller.trajectory_done)
         return complete
     
-    def _get_order_of_axes(axis_id: str) -> int:
+    def _get_order_of_axes(self) -> Dict[str,int]:
         return {
             "X": 0,
             "Y": 1,
