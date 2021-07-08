@@ -14,20 +14,32 @@ class Odrive_Arm:
     """
     odrv_X = None
     odrv_YZ = None
-    axes: Union[Any, Dict[str, Any]] = None
+    axes: Dict[str, Any] = {
+        "X": None,
+        "Y": None,
+        "Z": None
+    }
 
-    true_movement_range: Dict[str,Tuple[float,float]] = {
+    axes_enabled = {
+        "X": False,
+        "Y": False,
+        "Z": False
+    }
+
+    _true_movement_range: Dict[str,Tuple[float,float]] = {
         "X": (-0.25, 0.05),
         "Y": (-0.3, -0.05),
         "Z": (-0.20, 0)
     }
 
+    auto_connect = True
+
     def _get_valid_movement_range(self, goal_pos: "Tuple[float, float, float]") -> Dict[str,Tuple[float,float]]:
         z_axis_factor = goal_pos[2]/2
         return {
-            "X": self.true_movement_range["X"],
-            "Y": (self.true_movement_range["Y"][0],self.true_movement_range["Y"][1]*z_axis_factor),
-            "Z": self.true_movement_range["Z"],
+            "X": self._true_movement_range["X"],
+            "Y": (self._true_movement_range["Y"][0],self._true_movement_range["Y"][1]*z_axis_factor),
+            "Z": self._true_movement_range["Z"],
 
         }
     def _get_axis_positions(self) -> Dict[str,float]:
@@ -38,12 +50,15 @@ class Odrive_Arm:
         }
 
     # Generates and Odrive Arm Object, that automatically connects to the odrive
-    def __init__(self):
+    def __init__(self, actually_connect=True):
+        global auto_connect
+        auto_connect = actually_connect
         """
         Setup the odrive, don't worry, black magic fuckery
         """
-        self._connect_to_odrive()
-        self._reset_odrives()
+        if auto_connect:
+            self.connect_to_odrive()
+            self._reset_odrives()
 
     # Configures all axes for fancy trajectory movement
     def _configure_for_trajectory(self):
@@ -74,6 +89,10 @@ class Odrive_Arm:
 
 
     def _reset_odrives(self):
+        """
+        Resetting is the only soloution that works for all problems.
+        TODO: Reset World as failsafe if odrive still has errors
+        """
         self.check_errors()
         # If there is an error, it configures it back to idle
         for axis_id in self.axes:
@@ -81,14 +100,14 @@ class Odrive_Arm:
             self.axes[axis_id].controller.config.control_mode = CONTROL_MODE_POSITION_CONTROL
         time.sleep(0.1)
         # Back to Zero Zero we go
-        self.move((0.5, 0.5, 0.5))
+        self.move_async((0.5, 0.5, 0.5))
 
         self._configure_for_trajectory()
 
     # Blocking connection to both odrives.
-    def _connect_to_odrive(self):
+    def connect_to_odrive(self):
         """
-        Connect to the odrive
+        Connect to the odrive but fancy
         """
         print("finding YZ odrive...")
         self.odrv_YZ = odrive.find_any(serial_number="208037743548")
@@ -107,6 +126,8 @@ class Odrive_Arm:
             "Y": self.odrv_YZ.axis1,
             "Z": self.odrv_YZ.axis0
         }
+        for axis_id in self.axes_enabled:
+            self.axes_enabled[axis_id] = True
         print("ODrives are connected, dumping previous errors")
         # ODrive dose not clear errors with a reconnection, and will refuse to take action until they are cleared
         print("YZ Odrive Errors:")
@@ -122,13 +143,19 @@ class Odrive_Arm:
         """
         are the odrives connected? Are they? ANSWER ME!!
         """
-        assert self.odrv_X != None
-        assert not isinstance(self.odrv_X, list)
+        try:
+            assert self.odrv_X != None
+            assert not isinstance(self.odrv_X, list)
 
-        assert self.odrv_YZ != None
-        assert not isinstance(self.odrv_YZ, list)
+            assert self.odrv_YZ != None
+            assert not isinstance(self.odrv_YZ, list)
 
-        assert self.axes != None
+            for axes in self.axes.values():
+                assert axes != None
+        except AssertionError:
+            print("\n\nODRIVE NOT CONNECTED, CANNOT EXCUTE MOVE\n\n")
+            print("Attempting to reconnect:")
+            self.connect_to_odrive()
 
     def check_errors(self):
         """
@@ -171,35 +198,32 @@ class Odrive_Arm:
         scaled_pos = self._convert_to_odrive_units(axis_id,(goto_pos["X"],goto_pos["Y"],goto_pos["Z"]))
         self.axes[axis_id].controller.input_pos = scaled_pos
 
-    def move(self, pos: Tuple[float, float, float]):
+    def move_async(self, pos: Tuple[float, float, float]):
+        """
+        Takes in a position of the XYZ cords from 0->1, then auto scales them and updates the drive's target positions
+        """
         scaled_pos: Tuple[float, float, float] = tuple(map(
             lambda axis_id_and_pos:
                 self._convert_to_odrive_units(
-                    list(self.true_movement_range.keys())[axis_id_and_pos[0]],
+                    list(self._true_movement_range.keys())[axis_id_and_pos[0]],
                     pos
                 ),
             enumerate(list(pos))
         ))
         self.check_errors()
-        self.axes["X"].controller.input_pos = scaled_pos[0]
-        # TODO: Supposed to be zero? 0_0
-        self.axes["Y"].controller.input_pos = scaled_pos[1]
-        self.axes["Z"].controller.input_pos = scaled_pos[2]
-    
-    def move_traj(self, pos: Tuple[float, float, float]):
+        self.raw_move(scaled_pos)
+
+    def move_blocking(self, pos: Tuple[float, float, float]):
         scaled_pos: "Tuple[float, float, float]" = tuple(map(
             lambda axis_id_and_pos:
                 self._convert_to_odrive_units(
-                    list(self.true_movement_range.keys())[axis_id_and_pos[0]],
+                    list(self._true_movement_range.keys())[axis_id_and_pos[0]],
                     pos
                 ),
             enumerate(list(pos))
         ))
         self.check_errors()
-        self.axes["X"].controller.input_pos = scaled_pos[0]
-        # TODO: Supposed to be zero? 0_0
-        self.axes["Y"].controller.input_pos = scaled_pos[1]
-        self.axes["Z"].controller.input_pos = scaled_pos[2]
+        self.raw_move(scaled_pos)
 
         move_time = 0
         while not (self._check_trajectory_done() or move_time > 1.5):
@@ -207,11 +231,21 @@ class Odrive_Arm:
             move_time += 0.05
         if move_time > 1.5:
             print("Timeout on move")
+    def raw_move(self, raw_pos: Tuple[float, float, float]):
+        """
+        Moves to specified position in the ODrive's Rotational units
+        Warning: Allows you to move to a position that does not exist
+        """
+        for id,axis_id in enumerate(["X","Y","Z"]):
+            print(axis_id)
+            if self.axes_enabled[axis_id]:
+                print("enabled")
+                self.axes[axis_id].controller.input_pos = raw_pos[id]
 
 
     def _set_state(self, axis_id: str, state):
         """
-        Blocking mode set of axis
+        Sets
 
         """
         assert axis_id in self.axes
@@ -222,16 +256,18 @@ class Odrive_Arm:
         retry_delay = 0.1
         transition_time = 0
         print("transitioning")
-        # print("waiting for transition")
-        while not (axis.current_state == state or (axis.current_state != previous_state and previous_state == AXIS_STATE_IDLE) or transition_time > 1):
+        print("waiting for transition")
+        while not (axis.current_state == state or (axis.current_state != previous_state and previous_state == AXIS_STATE_IDLE) or transition_time > 0.5):
             print("transitioning,",axis.current_state)
 
             time.sleep(retry_delay)
             transition_time += retry_delay
-        # print("waiting for idle")
-
-        while not (axis.current_state == state or transition_time > 5):
+        print("waiting for idle")
+        transition_time = 0
+        while not (axis.current_state == state or transition_time > 0.5):
             time.sleep(retry_delay)
+            transition_time += retry_delay
+        print("Transition Done")
         self.check_errors()
 
     def _convert_to_odrive_units(self, axis_id: str, all_input_pos: Tuple[float, float, float]) -> float:
@@ -261,3 +297,21 @@ class Odrive_Arm:
             "Y": 1,
             "Z": 2,
         }
+    
+    def disable_axis(self, axis_id: str):
+        assert axis_id in self.axes
+        
+        self.check_errors()
+        self.axes_enabled[axis_id] = False
+
+        axis = self.axes[axis_id]
+        axis.requested_state = AXIS_STATE_IDLE
+
+    def enable_axis(self, axis_id: str):
+        assert axis_id in self.axes
+        
+        self.check_errors()
+        self.axes_enabled[axis_id] = False
+
+        axis = self.axes[axis_id]
+        axis.requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL
