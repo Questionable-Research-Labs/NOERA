@@ -1,7 +1,7 @@
 from typing import Dict, Tuple
 import odrive
 from odrive.enums import *
-from odrive.utils import dump_errors
+from odrive.utils import dump_errors,start_liveplotter
 from typing import *
 
 import sys
@@ -18,6 +18,12 @@ class Odrive_Arm:
         "X": None,
         "Y": None,
         "Z": None
+    }
+
+    axes_descriptions = {
+        "X": "This is the motor parallel to the top of the arm that swings it left to right. (3762364A3137, axis 0)",
+        "Y": "This is the motor motor running through the belt, responsible for moving the end of the arm up and down. (208037743548, axis 1)",
+        "Z": "This is the motor running the solid arm attachment in the middle, moves it end of the arm back, and forwards, and a bit up and down. (208037743548, axis 0)"
     }
 
     axes_enabled = {
@@ -96,7 +102,10 @@ class Odrive_Arm:
         self.check_errors()
         # If there is an error, it configures it back to idle
         for axis_id in self.axes:
-            self._set_state(axis_id, AXIS_STATE_CLOSED_LOOP_CONTROL)
+            if self.axes_enabled[axis_id]:
+                self._set_state(axis_id, AXIS_STATE_CLOSED_LOOP_CONTROL)
+            else: 
+                self._set_state(axis_id, AXIS_STATE_IDLE)
             self.axes[axis_id].controller.config.control_mode = CONTROL_MODE_POSITION_CONTROL
         time.sleep(0.1)
         # Back to Zero Zero we go
@@ -200,8 +209,12 @@ class Odrive_Arm:
 
     def move_async(self, pos: Tuple[float, float, float]):
         """
-        Takes in a position of the XYZ cords from 0->1, then auto scales them and updates the drive's target positions
+        Moves to the cordierites pos[X,Y,Z], the points should be between 0->1 which is the range of movement of the axis at that point.
+        This function is also async, it will return immediately before the movement is finished.
         """
+
+        # The Scaled position needs to be converted to the correct units one by one, because the scaled position is reliant on
+        # the other axes positions to determin the correct range of movement
         scaled_pos: Tuple[float, float, float] = tuple(map(
             lambda axis_id_and_pos:
                 self._convert_to_odrive_units(
@@ -214,6 +227,10 @@ class Odrive_Arm:
         self.raw_move(scaled_pos)
 
     def move_blocking(self, pos: Tuple[float, float, float]):
+        """
+        Moves to the cordierites pos[X,Y,Z], the points should be between 0->1 which is the range of movement of the axis at that point.
+        This function is also blocking, it will return when the movement is finished.
+        """
         scaled_pos: "Tuple[float, float, float]" = tuple(map(
             lambda axis_id_and_pos:
                 self._convert_to_odrive_units(
@@ -245,29 +262,32 @@ class Odrive_Arm:
 
     def _set_state(self, axis_id: str, state):
         """
-        Sets
-
+        Sets the Axis State (Blocking)
         """
         assert axis_id in self.axes
         axis = self.axes[axis_id]
 
-        previous_state = axis.current_state
-        axis.requested_state = state
-        retry_delay = 0.1
-        transition_time = 0
-        print("transitioning")
-        print("waiting for transition")
-        while not (axis.current_state == state or (axis.current_state != previous_state and previous_state == AXIS_STATE_IDLE) or transition_time > 0.5):
-            print("transitioning,",axis.current_state)
+        if state==AXIS_STATE_IDLE:
+            # If disabling the axis, we don't have to wait for the controller to go through configuration steps
+            axis.requested_state = state
+        else:
+            previous_state = axis.current_state
+            axis.requested_state = state
+            retry_delay = 0.1
+            transition_time = 0
+            print("transitioning")
+            print("waiting for transition")
+            while not (axis.current_state == state or (axis.current_state != previous_state and previous_state == AXIS_STATE_IDLE) or transition_time > 0.5):
+                print("transitioning,",axis.current_state)
 
-            time.sleep(retry_delay)
-            transition_time += retry_delay
-        print("waiting for idle")
-        transition_time = 0
-        while not (axis.current_state == state or transition_time > 0.5):
-            time.sleep(retry_delay)
-            transition_time += retry_delay
-        print("Transition Done")
+                time.sleep(retry_delay)
+                transition_time += retry_delay
+            print("waiting for idle")
+            transition_time = 0
+            while not (axis.current_state == state or transition_time > 0.5):
+                time.sleep(retry_delay)
+                transition_time += retry_delay
+            print("Transition Done")
         self.check_errors()
 
     def _convert_to_odrive_units(self, axis_id: str, all_input_pos: Tuple[float, float, float]) -> float:
@@ -305,7 +325,7 @@ class Odrive_Arm:
         self.axes_enabled[axis_id] = False
 
         axis = self.axes[axis_id]
-        axis.requested_state = AXIS_STATE_IDLE
+        self._set_state(axis,AXIS_STATE_IDLE)
 
     def enable_axis(self, axis_id: str):
         assert axis_id in self.axes
@@ -314,4 +334,9 @@ class Odrive_Arm:
         self.axes_enabled[axis_id] = False
 
         axis = self.axes[axis_id]
-        axis.requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL
+        self._set_state(axis,AXIS_STATE_CLOSED_LOOP_CONTROL)
+
+    def start_current_plot(self,axis_id):
+        start_liveplotter(lambda:[self.axes[axis_id].motor.current_control.Iq_setpoint, self.axes[axis_id].motor.current_control.Iq_measured])
+    def start_pos_plot(self,axis_id):
+        start_liveplotter(lambda:[self.axes[axis_id].encoder.pos_estimate, self.axes[axis_id].controller.pos_setpoint])

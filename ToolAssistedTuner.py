@@ -2,11 +2,13 @@ from typing import Tuple
 import dearpygui.dearpygui as dpg
 import time
 from OdrvWrapper.odrv_wrapper import Odrive_Arm
-import dearpygui.logger as dpg_logger
+from dearpygui.demo import show_demo
+show_demo()
 
-logger = dpg_logger.mvLogger()
 
-# dpg.show_documentation()
+# logger = dpg_logger.mvLogger()
+
+dpg.show_documentation()
 # dpg.show_style_editor()
 # dpg.show_debug()
 # dpg.show_about()
@@ -31,15 +33,43 @@ def generateTunningUI():
     else:
         ODRIVE_LOCK = False
         print("connecting to odrive")
-    arm = Odrive_Arm(actually_connect=True)
-    
+
+    arm = Odrive_Arm(actually_connect=True)    
     # Create Value Store
     with dpg.value_registry():
         x_enabled = dpg.add_bool_value(default_value=True)
         y_enabled = dpg.add_bool_value(default_value=True)
         z_enabled = dpg.add_bool_value(default_value=True)
 
-        string_value = dpg.add_string_value(default_value="Default string")
+    axis_settings = {
+        "X": [],
+        "Y": [],
+        "Z": []
+    }
+
+    axis_graphs = {
+        "X": {
+            "current":
+                {
+                    "time": [],
+                    "current": []
+                }
+        },
+        "Y": {
+            "current":
+                {
+                    "time": [],
+                    "current": []
+                }
+        },
+        "Z": {
+            "current":
+                {
+                    "time": [],
+                    "current": []
+                }
+        }
+    }
 
     # Generate UI
     print("Connected to Odrive")
@@ -50,26 +80,66 @@ def generateTunningUI():
             def enabled_motor_callback(sender, app_data, user_data): 
                 axis_id = user_data
                 if arm.axes_enabled[axis_id]:
+                    print("Disabling Axis")
                     arm.disable_axis(axis_id)
                 else: 
+                    print("Enabling Axis")
                     arm.enable_axis(axis_id)
                 # [x_enabled,y_enabled,z_enabled]
-            for axis,store in zip(arm.axes.keys(),[x_enabled,y_enabled,z_enabled]):
-                with dpg.menu(label="{} Axis".format(axis)):
-                    dpg.add_checkbox(label="Motor Enabled", drop_callback=enabled_motor_callback,default_value=True,user_data=axis,source=store)
-        for axis in arm.axes.keys():
+            for axis_id,store in zip(arm.axes.keys(),[x_enabled,y_enabled,z_enabled]):
+                with dpg.menu(label="{} Axis".format(axis_id)):
+                    dpg.add_checkbox(label="Motor Enabled", callback=enabled_motor_callback,default_value=True,user_data=axis_id,source=store)
+        for axis_id in arm.axes.keys():
 
-            with dpg.collapsing_header(label="{} Axis".format(axis)):
-                dpg.add_text(default_value="This is the motor parallel to the top of the arm that swings it left to right")
+            with dpg.collapsing_header(label="{} Axis".format(axis_id)):
+                dpg.add_text(default_value=arm.axes_descriptions[axis_id])
+                with dpg.table(header_row=True):
+                    tunning_labels=["Pos Gain","Vel Gain","Vel Integrator Gain","Vel Limit","Motor Current"]
+                    for i in tunning_labels:
+                        dpg.add_table_column(label=i)
+                    axis = arm.axes[axis_id]
+                    contr_config = axis.controller.config
+                    default_values = [contr_config.pos_gain,contr_config.vel_gain,contr_config.vel_integrator_gain,contr_config.vel_limit,axis.motor.config.current_lim]
+                    for i in range(len(tunning_labels)):
+                        axis_settings[axis_id].append(
+                            dpg.add_input_float(label="", default_value=default_values[i])
+                            )
+                        dpg.add_table_next_column()
+                def set_config_button_callback(sender, app_data, user_data):
+                    axis_config = arm.axes[user_data]
+                    contr_config = axis_config.controller.config
+                    input_values = []
+                    for i in range(5):
+                        input_values.append(
+                            dpg.get_value(
+                                axis_settings[user_data][i]
+                                )
+                            )
+                    contr_config.pos_gain = input_values[0]
+                    contr_config.vel_gain = input_values[1]
+                    contr_config.vel_integrator_gain = input_values[2]
+                    contr_config.vel_limit
+                    axis_config.motor.config.current_lim
+
+                dpg.add_button(label="Set Configuration",user_data=axis_id,callback=set_config_button_callback)
+                def start_graphs_button_callback(sender, app_data, user_data):
+                    arm.start_current_plot(axis_id=user_data)
+                    arm.start_pos_plot(axis_id=user_data)
+                dpg.add_button(label="Start Graphs",user_data=axis_id,callback=start_graphs_button_callback)
+
+                # with dpg.collapsing_header(label="Info Graphs"):
+                #     with dpg.plot(arm.axes[axis_id].motor.current_control.Iq_setpoint, arm.axes[axis_id].motor.current_control.Iq_measured,label="Current Pull from motor"):
+                #         dpg.add_plot_axis(dpg.mvXAxis, label="x")
+                #         dpg.add_plot_axis(dpg.mvYAxis, label="y")
+                #         dpg.add_line_series([], [], label="0.5 + 0.5 * sin(x)", parent=dpg.last_item())
+                
+
+                
         def update_position_axes(sender, app_data):
             value: Tuple[float,float,float] = tuple(dpg.get_value(sender)[0:3])
             print("Sending Position",value)
             arm.move_async(value)
-        dpg.add_3d_slider(label="Yes",max_x=1,max_y=1,max_z=1, scale=0.5,callback=update_position_axes)
-
-        
-    time.sleep(5)
-
+        dpg.add_3d_slider(label="Control all 3 axis in a 3D Slider",max_x=1,max_y=1,max_z=1, scale=0.5,callback=update_position_axes)
 
 # Initialize GUI
 
