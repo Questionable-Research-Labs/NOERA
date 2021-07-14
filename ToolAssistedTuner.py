@@ -8,7 +8,7 @@ show_demo()
 
 # logger = dpg_logger.mvLogger()
 
-dpg.show_documentation()
+# dpg.show_documentation()
 # dpg.show_style_editor()
 # dpg.show_debug()
 # dpg.show_about()
@@ -79,12 +79,13 @@ def generateTunningUI():
         with dpg.menu_bar():
             def enabled_motor_callback(sender, app_data, user_data): 
                 axis_id = user_data
-                if arm.axes_enabled[axis_id]:
-                    print("Disabling Axis")
-                    arm.disable_axis(axis_id)
-                else: 
+                print("enable disable",axis_id)
+                if dpg.get_value(sender):
                     print("Enabling Axis")
                     arm.enable_axis(axis_id)
+                else: 
+                    print("Disabling Axis")
+                    arm.disable_axis(axis_id)
                 # [x_enabled,y_enabled,z_enabled]
             for axis_id,store in zip(arm.axes.keys(),[x_enabled,y_enabled,z_enabled]):
                 with dpg.menu(label="{} Axis".format(axis_id)):

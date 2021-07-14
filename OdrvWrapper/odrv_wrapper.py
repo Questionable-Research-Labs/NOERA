@@ -65,6 +65,8 @@ class Odrive_Arm:
         if auto_connect:
             self.connect_to_odrive()
             self._reset_odrives()
+            # self.start_current_plot(axis_id="X")
+            self.start_pos_plot(axis_id="X")
 
     # Configures all axes for fancy trajectory movement
     def _configure_for_trajectory(self):
@@ -264,6 +266,7 @@ class Odrive_Arm:
         """
         Sets the Axis State (Blocking)
         """
+        print(self.axes)
         assert axis_id in self.axes
         axis = self.axes[axis_id]
 
@@ -319,22 +322,24 @@ class Odrive_Arm:
         }
     
     def disable_axis(self, axis_id: str):
+        self.check_errors()
+        print(axis_id,self.axes)
+
         assert axis_id in self.axes
         
-        self.check_errors()
         self.axes_enabled[axis_id] = False
 
-        axis = self.axes[axis_id]
-        self._set_state(axis,AXIS_STATE_IDLE)
+        self._set_state(axis_id,AXIS_STATE_IDLE)
 
     def enable_axis(self, axis_id: str):
+        self.check_errors()
+        print(axis_id,self.axes)
         assert axis_id in self.axes
         
-        self.check_errors()
-        self.axes_enabled[axis_id] = False
+        self.axes_enabled[axis_id] = True
 
         axis = self.axes[axis_id]
-        self._set_state(axis,AXIS_STATE_CLOSED_LOOP_CONTROL)
+        self._set_state(axis_id,AXIS_STATE_CLOSED_LOOP_CONTROL)
 
     def start_current_plot(self,axis_id):
         start_liveplotter(lambda:[self.axes[axis_id].motor.current_control.Iq_setpoint, self.axes[axis_id].motor.current_control.Iq_measured])

@@ -55,18 +55,36 @@ def main():
     odrv_YZ.axis0.controller.config.pos_gain = 30.0
     odrv_YZ.axis0.controller.config.vel_gain = 0.35
     odrv_YZ.axis0.controller.config.vel_integrator_gain = 0.32
+    odrv_YZ.axis0.motor.config.current_lim = 20.0
+    odrv_YZ.axis0.trap_traj.config.vel_limit = 15
+    odrv_YZ.axis0.trap_traj.config.accel_limit = 10
+    odrv_YZ.axis0.trap_traj.config.decel_limit = 10
+    odrv_YZ.axis0.controller.config.vel_limit = 15
+
 
     # Y SETUP
     odrv_YZ.axis1.motor.config.resistance_calib_max_voltage = 2.0
     odrv_YZ.axis1.controller.config.pos_gain = 25.0
     odrv_YZ.axis1.controller.config.vel_gain = 0.25
     odrv_YZ.axis1.controller.config.vel_integrator_gain = 0.32
+    odrv_YZ.axis1.motor.config.current_lim = 20.0
+    odrv_YZ.axis1.trap_traj.config.vel_limit = 15
+    odrv_YZ.axis1.trap_traj.config.accel_limit = 10
+    odrv_YZ.axis1.trap_traj.config.decel_limit = 10
+    odrv_YZ.axis1.controller.config.vel_limit = 15
+
 
     # X SETUP
     odrv_X.axis0.motor.config.resistance_calib_max_voltage = 2.0
-    odrv_X.axis0.controller.config.pos_gain = 30.0
-    odrv_X.axis0.controller.config.vel_gain = 0.30
+    odrv_X.axis0.controller.config.pos_gain = 4.700
+    odrv_X.axis0.controller.config.vel_gain = 3.000
     odrv_X.axis0.controller.config.vel_integrator_gain = 0.32
+    odrv_X.axis0.motor.config.current_lim = 25.0
+    odrv_X.axis0.trap_traj.config.vel_limit = 40
+    odrv_X.axis0.trap_traj.config.accel_limit = 20
+    odrv_X.axis0.trap_traj.config.decel_limit = 20
+    odrv_X.axis0.controller.config.vel_limit = 40
+
 
 
 
@@ -83,14 +101,9 @@ def main():
         axis.encoder.config.calib_range = 0.05
         axis.motor.config.calibration_current = 10.0
         axis.motor.config.resistance_calib_max_voltage = 5.0
-        axis.controller.config.vel_limit = 15
         axis.controller.config.vel_limit_tolerance = 1.2000000476837158
         axis.motor.config.pole_pairs = 20
-        axis.motor.config.current_lim = 20.0
 
-        axis.trap_traj.config.vel_limit = 15
-        axis.trap_traj.config.accel_limit = 10
-        axis.trap_traj.config.decel_limit = 10
         # axis.<axis>.controller.config.inertia 
 
         
