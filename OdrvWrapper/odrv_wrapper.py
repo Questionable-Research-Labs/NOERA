@@ -40,6 +40,20 @@ class Odrive_Arm:
 
     auto_connect = True
 
+    # Generates and Odrive Arm Object, that automatically connects to the odrive
+    def __init__(self, actually_connect=True, autostart_pos_plot=False, autostart_current_plot=False):
+        global auto_connect
+        auto_connect = actually_connect
+        """
+        Setup the odrive, don't worry, black magic fuckery
+        """
+        if auto_connect:
+            self.connect_to_odrive()
+            self._reset_odrives()
+            if autostart_pos_plot:
+                self.start_pos_plot(axis_id="X")
+            if autostart_current_plot:
+                self.start_current_plot(axis_id="X")
     def _get_valid_movement_range(self, goal_pos: "Tuple[float, float, float]") -> Dict[str,Tuple[float,float]]:
         z_axis_factor = goal_pos[2]/2
         return {
@@ -54,19 +68,6 @@ class Odrive_Arm:
             "Y": self.axes["Y"].encoder.pos_estimate,
             "Z": self.axes["Z"].encoder.pos_estimate
         }
-
-    # Generates and Odrive Arm Object, that automatically connects to the odrive
-    def __init__(self, actually_connect=True):
-        global auto_connect
-        auto_connect = actually_connect
-        """
-        Setup the odrive, don't worry, black magic fuckery
-        """
-        if auto_connect:
-            self.connect_to_odrive()
-            self._reset_odrives()
-            # self.start_current_plot(axis_id="X")
-            self.start_pos_plot(axis_id="X")
 
     # Configures all axes for fancy trajectory movement
     def _configure_for_trajectory(self):
